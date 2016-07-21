@@ -1,0 +1,100 @@
+#include <iostream>
+
+/*
+ * utf16_to_utf8
+ * Input:
+ * utf16: 要转换的字符串; utf16_len: 要转换的字符串长度（两个Bytes一个字符）; utf8: 输出的字符串; utf8_max_len: utf8的最大字节数
+ * Output:
+ * return value: >= 0: 转换完成后utf8的实际字节数; < 0: Error
+ */
+int utf16_to_utf8(const uint16_t *utf16, size_t utf16_len, uint8_t *utf8, size_t utf8_max_len)
+{
+    if (utf8_max_len <= 1) {
+        *utf8 = 0;
+        return 0;
+    }
+    --utf8_max_len;
+
+    int utf8_len = 0;
+
+    const uint16_t *utf16_end = utf16 + utf16_len;
+    while (utf16 < utf16_end) {
+        if (*utf16 <= 0x007f) {             //1 byte
+            if (utf8_len + 1 > static_cast<int>(utf8_max_len)) {
+                break;
+            }
+            utf8[utf8_len++] = ((*utf16) & 0x7f);
+        } else if (*utf16 <= 0x07ff) {      //2 bytes
+            if (utf8_len + 2 > static_cast<int>(utf8_max_len)) {
+                break;
+            }
+            utf8[utf8_len++] = (((*utf16) >> 6) & 0x1f) | 0xc0;         //110x xxxx
+            utf8[utf8_len++] = ((*utf16) & 0x3f) | 0x80;                //10xx xxxx
+        } else if (*utf16 < 0xd800 || *utf16 > 0xdb00) {        //3 bytes
+            if (utf8_len + 3 > static_cast<int>(utf8_max_len)) {
+                break;
+            }
+            utf8[utf8_len++] = (((*utf16) >> 12) & 0x0f) | 0xe0;        //1110 xxxx
+            utf8[utf8_len++] = (((*utf16) >> 6) & 0x3f) | 0x80;         //10xx xxxx
+            utf8[utf8_len++] = ((*utf16) & 0x003f) | 0x80;              //10xx xxxx
+        } else {        //4 bytes
+            if (utf16 + 1 >= utf16_end) {
+                break;
+            }
+            uint32_t unicode_value = ((((*utf16) & 0x03ff) << 10) | ((*(utf16 + 1)) & 0x03ff)) + 0x10000;
+            ++utf16;
+            if (utf8_len + 4 > static_cast<int>(utf8_max_len)) {
+                break;
+            }
+            utf8[utf8_len++] = ((unicode_value >> 18) & 0x07) | 0xf0;   //1111 0xxx
+            utf8[utf8_len++] = ((unicode_value >> 12) & 0x3f) | 0x80;   //10xx xxxx
+            utf8[utf8_len++] = ((unicode_value >> 6) & 0x3f) | 0x80;    //10xx xxxx
+            utf8[utf8_len++] = (unicode_value & 0x3f) | 0x80;           //10xx xxxx
+        }
+        ++utf16;
+    }
+    utf8[utf8_len] = 0;
+
+    return utf8_len;
+}
+
+std::string base16_encode(const std::string &src)
+{
+    std::string dest;
+    size_t len = src.size();
+    dest.resize(len << 1);
+    for (size_t i = 0; i < len; ++i) {
+        char temp[3];
+        snprintf(temp, 3, "%02x", (uint8_t)src[i]);
+        dest[(i << 1)] = temp[0];
+        dest[(i << 1) | 1] = temp[1];
+    }
+    return dest;
+}
+
+std::string base16_decode(const std::string &src)
+{
+    std::string dest;
+    size_t len = src.size();
+    dest.resize(len >> 1);
+    for (size_t i = 0; i < len / 2; ++i) {
+        int x = strtol(src.substr((i << 1), 2).c_str(), NULL, 16);
+        dest[i] = x;
+    }
+    return dest;
+}
+
+int main()
+{
+    std::string s_base16_utf16 = "3dd81cde680065006c006c006f002000164e4c753dd800de01ff";    //"[emoji表情]hello 世界[emoji表情][emoji表情]！"的utf16值的base16结果
+    std::string s_utf16 = base16_decode(s_base16_utf16);
+    char cstr_utf8[100];
+    int utf8_len = utf16_to_utf8((uint16_t *)s_utf16.c_str(), s_utf16.length() / 2, (uint8_t *)cstr_utf8, sizeof(cstr_utf8));
+    if (utf8_len > 0) {
+        std::cout << "utf8 base16=" << base16_encode(std::string(cstr_utf8, utf8_len)) << std::endl;
+        std::cout << "utf8 string=" << cstr_utf8 << std::endl;		//不支持emoji表情展示，所以这里的emoji会出现乱码，可以看到hello 世界 ！
+    }
+    
+    return 0;
+}
+
