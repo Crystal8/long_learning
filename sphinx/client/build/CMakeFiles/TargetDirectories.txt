@@ -1,0 +1,1 @@
+/home/crystal/sphinx/client/build/CMakeFiles/client.dir
